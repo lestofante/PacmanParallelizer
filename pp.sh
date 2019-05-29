@@ -2,7 +2,7 @@
 
 arch=$(uname -m)
 maxMirrorForDownload=4
-pacmanCahceDir="$(pacman-conf CacheDir)"
+pacmanCacheDir="$(pacman-conf CacheDir)"
 
 if [[ $UID -ne 0 ]]; then
 	sudo -p 'Restarting as root, password: ' bash $0 "$@"
@@ -45,7 +45,7 @@ for pkgNameAndVersion in "${packageList[@]}"; do
 		fi
 	done
 	
-	aria2c -c $downloadList -d "$pacmanCahceDir" &> /dev/null &
+	aria2c -c $downloadList -d "$pacmanCacheDir" &> /dev/null &
 	
 	running=$(jobs |wc -l)
 	echo ">>> $(date +%T) | Downloading $pkgName, $running/$maxParallelDownload download"
