@@ -9,20 +9,39 @@ if [[ $UID -ne 0 ]]; then
 	exit $?
 fi
 
+subprocessName="pacman"
+subprocessArgument=()
+while [ "$1" != "" ]; do
+	case $1 in
+		-a | --aur)
+			shift
+			subprocessName="$1"
+			;;
+		*)
+			subprocessArgument+=("$1")
+			;;
+	esac
+	shift
+done
+
 #read mirrorlist, "Server =" lines, remove all before and including "= " (10 char)
 readarray -t mirrorArray < <(grep "^Server =" /etc/pacman.d/mirrorlist | cut -c 10-)
 
 mirrorArrayLen=${#mirrorArray[@]}
 let maxParallelDownload=$mirrorArrayLen/$maxMirrorForDownload
-echo "mirrorsNumber:$mirrorArrayLen maxParallelDownload:$maxParallelDownload maxMirrorForDownload:$maxMirrorForDownload"
 
 #randomize the order of the mirror
 mirrorArray=( $(shuf -e "${mirrorArray[@]}") )
 
+echo ">>> $(date +%T) | Checking for updates"
 #now get the list of stuff to update
 readarray -t packageList < <(checkupdates | cut -d ' ' -f 1,4)
 
-pidToWait=''
+echo ">>> $(date +%T) | Found ${#packageList[@]} updates"
+echo ">>> $(date +%T) | Starting downloads using mirrorsNumber:$mirrorArrayLen maxParallelDownload:$maxParallelDownload maxMirrorForDownload:$maxMirrorForDownload"
+pidToWait=()
+declare -A pidToString
+#pidToWaitStr=""
 mirrorIndex=0
 for pkgNameAndVersion in "${packageList[@]}"; do
 	pkgName=${pkgNameAndVersion% *}
@@ -37,7 +56,7 @@ for pkgNameAndVersion in "${packageList[@]}"; do
 		mirror=${mirrorArray[mirrorIndex]}
 		pkgNameAndVersion=${pkgNameAndVersion/ /-}
 		val=${mirror/\$repo/$repo}
-		val=$(echo ${val/\$arch/$arch}/$pkgNameAndVersion-$archpkg.pkg.tar.xz)
+		val=$(echo ${val/\$arch/$arch}/$pkgNameAndVersion-$archpkg.pkg.tar.zst)
 		downloadList="$downloadList $val"
 		((mirrorIndex++))
 		if [[ $mirrorIndex -ge $mirrorArrayLen ]]; then
@@ -45,10 +64,14 @@ for pkgNameAndVersion in "${packageList[@]}"; do
 		fi
 	done
 	
-	aria2c -c $downloadList -d "$pacmanCacheDir" &> /dev/null &
+	aria2c -c $downloadList --connect-timeout=1 -s $maxMirrorForDownload -t 1 -d "$pacmanCacheDir" &> /dev/null &
+	pidTmp=($!)
+	pidToWait+=($pidTmp)
+	pidToString[$pidTmp]=$pkgName
+	pidToWaitStr+=" $pidTmp"
 	
 	running=$(jobs |wc -l)
-	echo ">>> $(date +%T) | Downloading $pkgName, $running/$maxParallelDownload download"
+	echo ">>> $(date +%T) | Downloading $pkgName, running/max download:$running/$maxParallelDownload"
 	
 	while [ $running -ge $maxParallelDownload ]; do
 		sleep 0.1 #sleep 0.1 second
@@ -57,15 +80,21 @@ for pkgNameAndVersion in "${packageList[@]}"; do
 done
 
 #now wait for all remaining jobs
-echo "all download started, waiting for completition"
-wait
+echo ">>> $(date +%T) | All download started, waiting for completition"
 
-if [[ $# -gt 0 ]]; then
-	echo "downloads complete, calling $1"
-	#DROP PRIVILEDGES
-	sudo -s -u $SUDO_USER $1 -Syu --noconfirm
-else
-	echo "downloads complete, calling pacman"
-	pacman -Syu --noconfirm
+for pid in "${pidToWait[@]}"; do
+	printf "waiting for ${pidToString[$pid]} "
+	wait $pid
+	echo " completed"
+done
+
+echo ">>> $(date +%T) | All download complete"
+
+if [[ $subprocessName != "pacman" ]]; then
+	echo ">>> $(date +%T) | AUR helper detected, dropping privileges"
+	#DROP PRIVILEDGES TO AVOID ISSUES
+	sudo -s -u $SUDO_USER $subprocessName ${subprocessArgument[@]}
 fi
 
+echo ">>> $(date +%T) | Calling $subprocessName with arguments ${subprocessArgument[@]}"
+$subprocessName ${subprocessArgument[@]}
