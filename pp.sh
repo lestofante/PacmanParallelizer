@@ -97,4 +97,7 @@ if [[ $subprocessName != "pacman" ]]; then
 fi
 
 echo ">>> $(date +%T) | Calling $subprocessName with arguments ${subprocessArgument[@]}"
+
 $subprocessName ${subprocessArgument[@]}
+
+echo ">>> $(date +%T) | All done, bye"
