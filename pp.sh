@@ -90,14 +90,13 @@ done
 
 echo ">>> $(date +%T) | All download complete"
 
+echo ">>> $(date +%T) | Calling $subprocessName with arguments ${subprocessArgument[@]}"
 if [[ $subprocessName != "pacman" ]]; then
 	echo ">>> $(date +%T) | AUR helper detected, dropping privileges"
 	#DROP PRIVILEDGES TO AVOID ISSUES
 	sudo -s -u $SUDO_USER $subprocessName ${subprocessArgument[@]}
+else
+	$subprocessName ${subprocessArgument[@]}
 fi
-
-echo ">>> $(date +%T) | Calling $subprocessName with arguments ${subprocessArgument[@]}"
-
-$subprocessName ${subprocessArgument[@]}
 
 echo ">>> $(date +%T) | All done, bye"
